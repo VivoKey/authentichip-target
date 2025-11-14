@@ -1,0 +1,17 @@
+# AuthentiChip JWT Validation - Python Dependencies
+
+# JWT validation and cryptography
+pyjwt>=2.8.0
+cryptography>=41.0.0
+
+# HTTP requests for JWKS fetching
+requests>=2.31.0
+
+# Optional: Flask web framework
+flask>=2.3.0
+
+# Optional: Django web framework
+django>=4.2.0
+
+# Optional: Testing
+pytest>=7.4.0

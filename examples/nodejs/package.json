@@ -1,0 +1,27 @@
+{
+  "name": "authentichip-examples-nodejs",
+  "version": "1.0.0",
+  "description": "AuthentiChip JWT validation examples for Node.js",
+  "main": "validate_jwt.js",
+  "scripts": {
+    "test": "node validate_jwt.js",
+    "example:standalone": "node validate_jwt.js",
+    "example:express": "node express_middleware.js"
+  },
+  "keywords": [
+    "authentichip",
+    "jwt",
+    "authentication",
+    "nfc",
+    "validation"
+  ],
+  "license": "CC0-1.0",
+  "dependencies": {
+    "express": "^4.18.0",
+    "jsonwebtoken": "^9.0.0",
+    "jwks-rsa": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
