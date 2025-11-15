@@ -83,8 +83,8 @@ async function validateAuthentiChipJWT(token) {
                 }
 
                 // Validate product claim (must be 6 for AuthentiChip)
-                if (!decoded.prd || decoded.prd !== 6) {
-                    return reject(new Error('Invalid product claim - expected prd=6 for AuthentiChip'));
+                if (!decoded.product || decoded.product !== 6) {
+                    return reject(new Error('Invalid product claim - expected product=6 for AuthentiChip'));
                 }
 
                 // Validate audience claim exists
@@ -94,9 +94,15 @@ async function validateAuthentiChipJWT(token) {
 
                 // Extract UID from client data claim
                 let uid = null;
-                if (decoded.cld && decoded.cld.uid) {
-                    uid = decoded.cld.uid;
-                } else {
+                if (decoded.cld) {
+                    try {
+                        const cldData = JSON.parse(decoded.cld);
+                        uid = cldData.uid;
+                    } catch (e) {
+                        return reject(new Error('Invalid client data (cld) claim - not valid JSON'));
+                    }
+                }
+                if (!uid) {
                     return reject(new Error('Missing uid in client data (cld) claim'));
                 }
 

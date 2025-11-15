@@ -106,8 +106,8 @@ function validateAuthentiChipJWT($jwt) {
         }
 
         // Validate product claim (must be 6 for AuthentiChip)
-        if (!isset($decoded->prd) || $decoded->prd !== 6) {
-            throw new Exception('Invalid product claim - expected prd=6 for AuthentiChip');
+        if (!isset($decoded->product) || $decoded->product !== 6) {
+            throw new Exception('Invalid product claim - expected product=6 for AuthentiChip');
         }
 
         // Validate audience claim exists
@@ -116,11 +116,17 @@ function validateAuthentiChipJWT($jwt) {
         }
 
         // Extract UID from client data claim
-        if (!isset($decoded->cld) || !isset($decoded->cld->uid) || empty($decoded->cld->uid)) {
+        if (!isset($decoded->cld) || empty($decoded->cld)) {
+            throw new Exception('Missing client data (cld) claim');
+        }
+
+        // Parse cld as JSON string
+        $cldData = json_decode($decoded->cld);
+        if ($cldData === null || !isset($cldData->uid) || empty($cldData->uid)) {
             throw new Exception('Missing uid in client data (cld) claim');
         }
 
-        $uid = $decoded->cld->uid;
+        $uid = $cldData->uid;
 
         return [
             'chipId' => $chipId,

@@ -2,6 +2,7 @@
 package authentichip
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -137,8 +138,8 @@ func ValidateJWT(tokenString string) (*ValidationResult, error) {
 	}
 
 	// Verify product type is 6
-	prd, ok := claims["prd"].(float64)
-	if !ok || int(prd) != 6 {
+	product, ok := claims["product"].(float64)
+	if !ok || int(product) != 6 {
 		return nil, ErrInvalidProduct
 	}
 
@@ -154,12 +155,19 @@ func ValidateJWT(tokenString string) (*ValidationResult, error) {
 	}
 
 	// Extract UID from client data
-	cld, ok := claims["cld"].(map[string]interface{})
-	if !ok {
+	// The cld claim is a JSON string, not an object
+	cldStr, ok := claims["cld"].(string)
+	if !ok || cldStr == "" {
 		return nil, ErrMissingUID
 	}
 
-	uid, ok := cld["uid"].(string)
+	// Parse the cld JSON string
+	var cldData map[string]interface{}
+	if err := json.Unmarshal([]byte(cldStr), &cldData); err != nil {
+		return nil, fmt.Errorf("invalid cld claim - not valid JSON: %w", err)
+	}
+
+	uid, ok := cldData["uid"].(string)
 	if !ok || uid == "" {
 		return nil, ErrMissingUID
 	}

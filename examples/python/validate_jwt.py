@@ -8,6 +8,7 @@ import jwt
 import requests
 import time
 import re
+import json
 from typing import Dict, Any
 from functools import lru_cache
 
@@ -142,7 +143,7 @@ def validate_authentichip_jwt(token: str) -> Dict[str, str]:
                 'verify_signature': True,
                 'verify_exp': True,
                 'verify_iss': True,
-                'require': ['exp', 'iss', 'sub', 'prd', 'aud', 'cld'],
+                'require': ['exp', 'iss', 'sub', 'product', 'aud', 'cld'],
             }
         )
 
@@ -158,9 +159,9 @@ def validate_authentichip_jwt(token: str) -> Dict[str, str]:
             raise Exception('Invalid chip ID format - expected SHA-256 hash')
 
         # Validate product claim (must be 6 for AuthentiChip)
-        prd = decoded.get('prd')
-        if prd != 6:
-            raise Exception('Invalid product claim - expected prd=6 for AuthentiChip')
+        product = decoded.get('product')
+        if product != 6:
+            raise Exception('Invalid product claim - expected product=6 for AuthentiChip')
 
         # Validate audience claim exists
         aud = decoded.get('aud')
@@ -169,10 +170,16 @@ def validate_authentichip_jwt(token: str) -> Dict[str, str]:
 
         # Extract UID from client data claim
         cld = decoded.get('cld')
-        if not cld or not isinstance(cld, dict):
-            raise Exception('Missing or invalid client data (cld) claim')
+        if not cld:
+            raise Exception('Missing client data (cld) claim')
 
-        uid = cld.get('uid')
+        # Parse cld as JSON string
+        try:
+            cld_data = json.loads(cld)
+        except (json.JSONDecodeError, TypeError):
+            raise Exception('Invalid client data (cld) claim - not valid JSON')
+
+        uid = cld_data.get('uid')
         if not uid:
             raise Exception('Missing uid in client data (cld) claim')
 
