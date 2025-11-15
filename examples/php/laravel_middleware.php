@@ -27,6 +27,7 @@ use Illuminate\Support\Facades\Log;
  *
  * Usage in controller:
  *    $chipId = $request->attributes->get('chip_id');
+ *    $uid = $request->attributes->get('chip_uid');
  *    $isVerified = $request->attributes->get('chip_verified');
  *    $status = $request->attributes->get('chip_status');
  */
@@ -49,15 +50,19 @@ class ValidateAuthentiChip
         // Attempt JWT validation if present
         if ($jwt) {
             try {
-                $chipId = $this->validateJWT($jwt);
+                $result = $this->validateJWT($jwt);
+                $chipId = $result['chipId'];
+                $chipUid = $result['uid'];
 
-                // Store verified chip ID in request attributes
+                // Store verified chip data in request attributes
                 $request->attributes->set('chip_id', $chipId);
+                $request->attributes->set('chip_uid', $chipUid);
                 $request->attributes->set('chip_verified', true);
                 $request->attributes->set('chip_status', 'verified');
 
                 Log::info('AuthentiChip verified', [
                     'chip_id' => $chipId,
+                    'uid' => $chipUid,
                     'ip' => $request->ip(),
                     'user_agent' => $request->userAgent(),
                 ]);
@@ -152,13 +157,13 @@ class ValidateAuthentiChip
     }
 
     /**
-     * Validate JWT and extract chip ID
+     * Validate JWT and extract chip ID and UID
      *
      * @param string $jwt
-     * @return string Chip ID
+     * @return array Associative array with 'chipId' and 'uid'
      * @throws \Exception
      */
-    protected function validateJWT(string $jwt): string
+    protected function validateJWT(string $jwt): array
     {
         // Fetch JWKS (cached for 6 hours)
         $jwks = Cache::remember('authentichip_jwks', 21600, function () {
@@ -188,6 +193,33 @@ class ValidateAuthentiChip
             throw new \Exception('Missing chip ID');
         }
 
-        return $decoded->sub;
+        $chipId = $decoded->sub;
+
+        // Validate chip ID format (SHA-256 hash - 64 hex characters)
+        if (!preg_match('/^[0-9a-f]{64}$/i', $chipId)) {
+            throw new \Exception('Invalid chip ID format - expected SHA-256 hash');
+        }
+
+        // Validate product claim (must be 6 for AuthentiChip)
+        if (!isset($decoded->prd) || $decoded->prd !== 6) {
+            throw new \Exception('Invalid product claim - expected prd=6 for AuthentiChip');
+        }
+
+        // Validate audience claim exists
+        if (!isset($decoded->aud) || empty($decoded->aud)) {
+            throw new \Exception('Missing audience (aud) claim in JWT');
+        }
+
+        // Extract UID from client data claim
+        if (!isset($decoded->cld) || !isset($decoded->cld->uid) || empty($decoded->cld->uid)) {
+            throw new \Exception('Missing uid in client data (cld) claim');
+        }
+
+        $uid = $decoded->cld->uid;
+
+        return [
+            'chipId' => $chipId,
+            'uid' => $uid
+        ];
     }
 }

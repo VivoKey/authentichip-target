@@ -72,7 +72,31 @@ async function validateAuthentiChipJWT(token) {
                     return reject(new Error('Missing chip ID in JWT'));
                 }
 
-                resolve(chipId);
+                // Validate chip ID format (SHA-256 hash - 64 hex characters)
+                const sha256Regex = /^[0-9a-f]{64}$/i;
+                if (!sha256Regex.test(chipId)) {
+                    return reject(new Error('Invalid chip ID format - expected SHA-256 hash'));
+                }
+
+                // Validate product claim (must be 6 for AuthentiChip)
+                if (!decoded.prd || decoded.prd !== 6) {
+                    return reject(new Error('Invalid product claim - expected prd=6 for AuthentiChip'));
+                }
+
+                // Validate audience claim exists
+                if (!decoded.aud) {
+                    return reject(new Error('Missing audience (aud) claim in JWT'));
+                }
+
+                // Extract UID from client data claim
+                let uid = null;
+                if (decoded.cld && decoded.cld.uid) {
+                    uid = decoded.cld.uid;
+                } else {
+                    return reject(new Error('Missing uid in client data (cld) claim'));
+                }
+
+                resolve({ chipId, uid });
             }
         );
     });
@@ -95,11 +119,12 @@ export default async function handler(req, res) {
     // Handle JWT verification
     if (vkjwt) {
         try {
-            const chipId = await validateAuthentiChipJWT(vkjwt);
+            const { chipId, uid } = await validateAuthentiChipJWT(vkjwt);
 
             return res.status(200).json({
                 verified: true,
                 chipId,
+                uid,
                 timestamp: new Date().toISOString(),
             });
 
@@ -150,8 +175,8 @@ export default async function handler(req, res) {
  *
  *     if (vkjwt) {
  *         try {
- *             const chipId = await validateAuthentiChipJWT(vkjwt);
- *             chipData = { verified: true, chipId };
+ *             const { chipId, uid } = await validateAuthentiChipJWT(vkjwt);
+ *             chipData = { verified: true, chipId, uid };
  *         } catch (error) {
  *             chipData = { verified: false, error: error.message };
  *         }
@@ -175,6 +200,7 @@ export default async function handler(req, res) {
  *                 <div className="verified">
  *                     <p>Verified Authentic</p>
  *                     <p>Chip ID: {chipData.chipId}</p>
+ *                     <p>UID: {chipData.uid}</p>
  *                 </div>
  *             ) : (
  *                 <div className="unverified">
@@ -230,6 +256,7 @@ export default async function handler(req, res) {
  *             <div>
  *                 <h1>Verified Authentic</h1>
  *                 <p>Chip ID: {chipData.chipId}</p>
+ *                 <p>UID: {chipData.uid}</p>
  *             </div>
  *         );
  *     } else {

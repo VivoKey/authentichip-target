@@ -32,14 +32,15 @@ func GinMiddleware() gin.HandlerFunc {
 
 		// Attempt JWT validation
 		if vkjwt != "" {
-			chipID, err := ValidateJWT(vkjwt)
+			result, err := ValidateJWT(vkjwt)
 			if err == nil {
 				// Success
-				c.Set("chip_id", chipID)
+				c.Set("chip_id", result.ChipID)
+				c.Set("chip_uid", result.UID)
 				c.Set("chip_verified", true)
 				c.Set("chip_status", string(StatusVerified))
 
-				log.Printf("[AuthentiChip] Verified: %s from %s", chipID, c.ClientIP())
+				log.Printf("[AuthentiChip] Verified: ChipID=%s UID=%s from %s", result.ChipID, result.UID, c.ClientIP())
 			} else {
 				// Validation failed - determine status
 				var status ChipStatus
@@ -97,7 +98,7 @@ func GinMiddlewareRequired() gin.HandlerFunc {
 			return
 		}
 
-		chipID, err := ValidateJWT(vkjwt)
+		result, err := ValidateJWT(vkjwt)
 		if err != nil {
 			var errResp gin.H
 			switch err {
@@ -128,11 +129,12 @@ func GinMiddlewareRequired() gin.HandlerFunc {
 		}
 
 		// Add chip info to context
-		c.Set("chip_id", chipID)
+		c.Set("chip_id", result.ChipID)
+		c.Set("chip_uid", result.UID)
 		c.Set("chip_verified", true)
 		c.Set("chip_status", string(StatusVerified))
 
-		log.Printf("[AuthentiChip] Verified: %s from %s", chipID, c.ClientIP())
+		log.Printf("[AuthentiChip] Verified: ChipID=%s UID=%s from %s", result.ChipID, result.UID, c.ClientIP())
 
 		c.Next()
 	}

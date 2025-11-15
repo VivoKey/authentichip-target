@@ -196,14 +196,23 @@ A valid `vkjwt` contains:
 ```json
 {
   "iss": "auth.vivokey.com",
-  "sub": "550e8400-e29b-41d4-a716-446655440000",
+  "sub": "76484a3aeff3bcf0f4246db4c40c62e284f27dcf7f1454d268c4c05d3898ee1c",
+  "aud": "example.com",
+  "prd": 6,
+  "cld": {
+    "uid": "04AE72D2062190"
+  },
   "iat": 1699900000,
   "exp": 1699900300
 }
 ```
 
 - `iss`: Issuer - always `auth.vivokey.com`
-- `sub`: Subject - unique chip ID (UUID)
+- `sub`: Subject - unique chip ID (SHA-256 hash from JWT SUB claim)
+- `aud`: Audience - your website's domain (e.g., "example.com")
+- `prd`: Product ID - always `6` for AuthentiChip
+- `cld`: Client data - contains additional verified chip information:
+  - `uid`: 7-byte chip UID from NFC scan (e.g., "04AE72D2062190")
 - `iat`: Issued at timestamp (Unix epoch)
 - `exp`: Expiration timestamp (Unix epoch, 5 minutes after iat)
 

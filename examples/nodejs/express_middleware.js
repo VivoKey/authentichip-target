@@ -23,14 +23,14 @@ const { validateAuthentiChipJWT } = require('./validate_jwt');
  * AuthentiChip validation middleware
  *
  * Adds the following properties to the request object:
- * - req.chipId: Verified chip ID (UUID) or null
+ * - req.chipId: Verified chip ID (SHA-256 hash) or null
  * - req.chipVerified: Boolean indicating if chip was verified
  * - req.chipStatus: 'verified', 'expired', 'invalid', 'insecure', 'error', or 'none'
- * - req.chipUid: Raw UID for unverified scans
+ * - req.chipUid: 7-byte chip UID (available for both verified and unverified scans)
  *
  * @param {Object} options - Configuration options
  * @param {boolean} options.required - If true, reject requests without valid JWT (default: false)
- * @param {Function} options.onVerified - Callback(req, chipId) called when chip is verified
+ * @param {Function} options.onVerified - Callback(req, chipId, uid) called when chip is verified
  * @param {Function} options.onUnverified - Callback(req, uid, status) called for unverified scans
  * @returns {Function} Express middleware function
  */
@@ -55,15 +55,17 @@ function authentiChipMiddleware(options = {}) {
         // Attempt JWT validation if present
         if (vkjwt) {
             try {
-                const chipId = await validateAuthentiChipJWT(vkjwt);
+                const { chipId, uid } = await validateAuthentiChipJWT(vkjwt);
 
                 req.chipId = chipId;
+                req.chipUid = uid;
                 req.chipVerified = true;
                 req.chipStatus = 'verified';
 
                 // Log successful verification
                 console.log('[AuthentiChip] Verified:', {
                     chipId,
+                    uid,
                     ip: req.ip,
                     userAgent: req.get('user-agent'),
                     timestamp: new Date().toISOString(),
@@ -71,7 +73,7 @@ function authentiChipMiddleware(options = {}) {
 
                 // Call onVerified callback if provided
                 if (onVerified) {
-                    onVerified(req, chipId);
+                    onVerified(req, chipId, uid);
                 }
 
                 return next();
@@ -160,8 +162,8 @@ if (require.main === module) {
 
     // Apply middleware to all routes
     app.use(authentiChipMiddleware({
-        onVerified: (req, chipId) => {
-            console.log('Custom handler - verified:', chipId);
+        onVerified: (req, chipId, uid) => {
+            console.log('Custom handler - verified:', { chipId, uid });
         },
         onUnverified: (req, uid, status) => {
             console.log('Custom handler - unverified:', { uid, status });

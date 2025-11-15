@@ -15,10 +15,10 @@
  * Usage in your theme or another plugin:
  *
  * // Handle verified scans
- * add_action('authentichip_verified', function($chipId) {
- *     error_log("Verified chip: " . $chipId);
+ * add_action('authentichip_verified', function($chipId, $uid) {
+ *     error_log("Verified chip: " . $chipId . " (UID: " . $uid . ")");
  *     // Look up product, grant access, etc.
- * });
+ * }, 10, 2);
  *
  * // Handle unverified scans
  * add_action('authentichip_unverified', function($uid, $status) {
@@ -72,23 +72,27 @@ class AuthentiChip_Integration {
 
         if ($jwt) {
             try {
-                $chipId = $this->validate_jwt($jwt);
+                $result = $this->validate_jwt($jwt);
+                $chipId = $result['chipId'];
+                $uid = $result['uid'];
 
                 // Store in session for later use
                 if (!session_id()) {
                     session_start();
                 }
                 $_SESSION['authentichip_id'] = $chipId;
+                $_SESSION['authentichip_uid'] = $uid;
                 $_SESSION['authentichip_verified'] = true;
                 $_SESSION['authentichip_timestamp'] = time();
 
-                // Fire action hook for other plugins/themes
-                do_action('authentichip_verified', $chipId);
+                // Fire action hook for other plugins/themes (pass both chipId and uid)
+                do_action('authentichip_verified', $chipId, $uid);
 
                 // Optional: Store in user meta if logged in
                 if (is_user_logged_in()) {
                     update_user_meta(get_current_user_id(), 'last_chip_scan', [
                         'chip_id' => $chipId,
+                        'uid' => $uid,
                         'timestamp' => time(),
                         'verified' => true,
                     ]);
@@ -125,7 +129,9 @@ class AuthentiChip_Integration {
     }
 
     /**
-     * Validate JWT and extract chip ID
+     * Validate JWT and extract chip ID and UID
+     *
+     * @return array Associative array with 'chipId' and 'uid'
      */
     private function validate_jwt($jwt) {
         // Get cached JWKS or fetch fresh
@@ -165,7 +171,34 @@ class AuthentiChip_Integration {
             throw new Exception('Missing chip ID');
         }
 
-        return $decoded->sub;
+        $chipId = $decoded->sub;
+
+        // Validate chip ID format (SHA-256 hash - 64 hex characters)
+        if (!preg_match('/^[0-9a-f]{64}$/i', $chipId)) {
+            throw new Exception('Invalid chip ID format - expected SHA-256 hash');
+        }
+
+        // Validate product claim (must be 6 for AuthentiChip)
+        if (!isset($decoded->prd) || $decoded->prd !== 6) {
+            throw new Exception('Invalid product claim - expected prd=6 for AuthentiChip');
+        }
+
+        // Validate audience claim exists
+        if (!isset($decoded->aud) || empty($decoded->aud)) {
+            throw new Exception('Missing audience (aud) claim in JWT');
+        }
+
+        // Extract UID from client data claim
+        if (!isset($decoded->cld) || !isset($decoded->cld->uid) || empty($decoded->cld->uid)) {
+            throw new Exception('Missing uid in client data (cld) claim');
+        }
+
+        $uid = $decoded->cld->uid;
+
+        return [
+            'chipId' => $chipId,
+            'uid' => $uid
+        ];
     }
 
     /**
@@ -181,9 +214,11 @@ class AuthentiChip_Integration {
 
         if ($verified) {
             $chipId = $_SESSION['authentichip_id'] ?? 'Unknown';
+            $uid = $_SESSION['authentichip_uid'] ?? 'Unknown';
             $output = '<div class="authentichip-verified">';
             $output .= '<p><strong>Verified Chip</strong></p>';
             $output .= '<p>Chip ID: ' . esc_html($chipId) . '</p>';
+            $output .= '<p>UID: ' . esc_html($uid) . '</p>';
             $output .= '</div>';
         } else {
             $status = $_SESSION['authentichip_status'] ?? null;
@@ -226,11 +261,12 @@ class AuthentiChip_Integration {
         }
 
         try {
-            $chipId = $this->validate_jwt($jwt);
+            $result = $this->validate_jwt($jwt);
 
             return [
                 'verified' => true,
-                'chip_id' => $chipId,
+                'chip_id' => $result['chipId'],
+                'uid' => $result['uid'],
             ];
 
         } catch (Exception $e) {

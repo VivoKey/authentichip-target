@@ -40,7 +40,7 @@ function getKey(header, callback) {
  * Validate an AuthentiChip JWT and extract the chip ID
  *
  * @param {string} token - The JWT token from vkjwt parameter
- * @returns {Promise<string>} - The verified chip ID (UUID)
+ * @returns {Promise<Object>} - Object with chipId (SHA-256 hash) and uid (7-byte chip UID)
  * @throws {Error} - If validation fails
  */
 async function validateAuthentiChipJWT(token) {
@@ -76,13 +76,31 @@ async function validateAuthentiChipJWT(token) {
                     return reject(new Error('Missing subject (chip ID) in JWT'));
                 }
 
-                // Validate chip ID format (UUID)
-                const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-                if (!uuidRegex.test(chipId)) {
-                    return reject(new Error('Invalid chip ID format'));
+                // Validate chip ID format (SHA-256 hash - 64 hex characters)
+                const sha256Regex = /^[0-9a-f]{64}$/i;
+                if (!sha256Regex.test(chipId)) {
+                    return reject(new Error('Invalid chip ID format - expected SHA-256 hash'));
                 }
 
-                resolve(chipId);
+                // Validate product claim (must be 6 for AuthentiChip)
+                if (!decoded.prd || decoded.prd !== 6) {
+                    return reject(new Error('Invalid product claim - expected prd=6 for AuthentiChip'));
+                }
+
+                // Validate audience claim exists
+                if (!decoded.aud) {
+                    return reject(new Error('Missing audience (aud) claim in JWT'));
+                }
+
+                // Extract UID from client data claim
+                let uid = null;
+                if (decoded.cld && decoded.cld.uid) {
+                    uid = decoded.cld.uid;
+                } else {
+                    return reject(new Error('Missing uid in client data (cld) claim'));
+                }
+
+                resolve({ chipId, uid });
             }
         );
     });
@@ -105,12 +123,13 @@ if (require.main === module) {
 
         if (vkjwt) {
             try {
-                const chipId = await validateAuthentiChipJWT(vkjwt);
+                const { chipId, uid } = await validateAuthentiChipJWT(vkjwt);
 
                 res.statusCode = 200;
                 res.end(`SUCCESS - Chip Verified
 ========================
 Chip ID: ${chipId}
+UID: ${uid}
 
 This chip has been cryptographically verified.
 You can use this chip ID to:

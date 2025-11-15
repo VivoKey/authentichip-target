@@ -37,10 +37,11 @@ def authentichip_optional(f):
     regardless of validation result.
 
     Adds the following attributes to the request object:
-    - request.chip_id: Verified chip ID (UUID) or None
+    - request.chip_id: Verified chip ID (SHA-256 hash) or None
+    - request.chip_uid: 7-byte chip UID or None
     - request.chip_verified: Boolean indicating if chip was verified
     - request.chip_status: 'verified', 'expired', 'invalid', 'insecure', 'error', or 'none'
-    - request.chip_uid: Raw UID for unverified scans
+    - request.chip_raw_uid: Raw UID for unverified scans
 
     Usage:
         @app.route('/product/<id>')
@@ -58,21 +59,23 @@ def authentichip_optional(f):
 
         # Initialize request attributes
         request.chip_id = None
+        request.chip_uid = None
         request.chip_verified = False
         request.chip_status = 'none'
-        request.chip_uid = None
+        request.chip_raw_uid = None
 
         # Attempt JWT validation
         if vkjwt:
             try:
-                chip_id = validate_authentichip_jwt(vkjwt)
+                result = validate_authentichip_jwt(vkjwt)
 
-                request.chip_id = chip_id
+                request.chip_id = result['chipId']
+                request.chip_uid = result['uid']
                 request.chip_verified = True
                 request.chip_status = 'verified'
 
                 logger.info(
-                    f'AuthentiChip verified: {chip_id} '
+                    f'AuthentiChip verified: {result["chipId"]} (UID: {result["uid"]}) '
                     f'from {request.remote_addr}'
                 )
 
@@ -93,7 +96,7 @@ def authentichip_optional(f):
 
         # Handle unverified scans
         elif vkstatus and vkuid:
-            request.chip_uid = vkuid
+            request.chip_raw_uid = vkuid
             request.chip_status = vkstatus
             request.chip_verified = False
 
@@ -114,7 +117,8 @@ def require_authentichip(f):
     Returns 401 if validation fails or no JWT is present.
 
     Adds the following attributes to the request object:
-    - request.chip_id: Verified chip ID (UUID)
+    - request.chip_id: Verified chip ID (SHA-256 hash)
+    - request.chip_uid: 7-byte chip UID
     - request.chip_verified: Always True (or request aborted)
     - request.chip_status: Always 'verified' (or request aborted)
 
@@ -139,14 +143,15 @@ def require_authentichip(f):
             }), 401
 
         try:
-            chip_id = validate_authentichip_jwt(vkjwt)
+            result = validate_authentichip_jwt(vkjwt)
 
-            request.chip_id = chip_id
+            request.chip_id = result['chipId']
+            request.chip_uid = result['uid']
             request.chip_verified = True
             request.chip_status = 'verified'
 
             logger.info(
-                f'AuthentiChip verified: {chip_id} '
+                f'AuthentiChip verified: {result["chipId"]} (UID: {result["uid"]}) '
                 f'from {request.remote_addr}'
             )
 
@@ -193,9 +198,10 @@ if __name__ == '__main__':
         return jsonify({
             'chip_verified': request.chip_verified,
             'chip_id': request.chip_id,
+            'chip_uid': request.chip_uid,
             'chip_status': request.chip_status,
             'message': (
-                f'Welcome! Verified chip: {request.chip_id}'
+                f'Welcome! Verified chip: {request.chip_id} (UID: {request.chip_uid})'
                 if request.chip_verified
                 else 'No verified chip detected'
             )
@@ -212,10 +218,11 @@ if __name__ == '__main__':
 
         if request.chip_verified:
             product_data['chip_id'] = request.chip_id
+            product_data['uid'] = request.chip_uid
             product_data['message'] = 'This is a verified authentic product'
         elif request.chip_status in ('insecure', 'expired'):
             product_data['message'] = 'Verification was unavailable'
-            product_data['uid'] = request.chip_uid
+            product_data['uid'] = request.chip_raw_uid
             product_data['status'] = request.chip_status
         else:
             product_data['message'] = 'No chip scan detected'
@@ -227,7 +234,8 @@ if __name__ == '__main__':
     def protected():
         return jsonify({
             'message': 'Access granted',
-            'chip_id': request.chip_id
+            'chip_id': request.chip_id,
+            'uid': request.chip_uid
         })
 
     @app.route('/optional')
@@ -237,6 +245,7 @@ if __name__ == '__main__':
             return jsonify({
                 'level': 'premium',
                 'chip_id': request.chip_id,
+                'uid': request.chip_uid,
                 'content': 'Full access granted'
             })
         else:

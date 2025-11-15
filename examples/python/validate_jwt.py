@@ -112,15 +112,15 @@ def get_signing_key(token: str) -> str:
     raise Exception(f'Signing key with kid {kid} not found in JWKS')
 
 
-def validate_authentichip_jwt(token: str) -> str:
+def validate_authentichip_jwt(token: str) -> Dict[str, str]:
     """
-    Validate an AuthentiChip JWT and extract the chip ID
+    Validate an AuthentiChip JWT and extract the chip ID and UID
 
     Args:
         token: The JWT token from vkjwt parameter
 
     Returns:
-        str: The verified chip ID (UUID)
+        dict: Dictionary with 'chipId' (SHA-256 hash) and 'uid' (7-byte chip UID)
 
     Raises:
         Exception: If validation fails for any reason
@@ -142,7 +142,7 @@ def validate_authentichip_jwt(token: str) -> str:
                 'verify_signature': True,
                 'verify_exp': True,
                 'verify_iss': True,
-                'require': ['exp', 'iss', 'sub'],
+                'require': ['exp', 'iss', 'sub', 'prd', 'aud', 'cld'],
             }
         )
 
@@ -152,12 +152,34 @@ def validate_authentichip_jwt(token: str) -> str:
         if not chip_id:
             raise Exception('Missing subject (chip ID) in JWT')
 
-        # Validate chip ID format (UUID)
-        uuid_pattern = r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-        if not re.match(uuid_pattern, chip_id, re.IGNORECASE):
-            raise Exception('Invalid chip ID format')
+        # Validate chip ID format (SHA-256 hash - 64 hex characters)
+        sha256_pattern = r'^[0-9a-f]{64}$'
+        if not re.match(sha256_pattern, chip_id, re.IGNORECASE):
+            raise Exception('Invalid chip ID format - expected SHA-256 hash')
 
-        return chip_id
+        # Validate product claim (must be 6 for AuthentiChip)
+        prd = decoded.get('prd')
+        if prd != 6:
+            raise Exception('Invalid product claim - expected prd=6 for AuthentiChip')
+
+        # Validate audience claim exists
+        aud = decoded.get('aud')
+        if not aud:
+            raise Exception('Missing audience (aud) claim in JWT')
+
+        # Extract UID from client data claim
+        cld = decoded.get('cld')
+        if not cld or not isinstance(cld, dict):
+            raise Exception('Missing or invalid client data (cld) claim')
+
+        uid = cld.get('uid')
+        if not uid:
+            raise Exception('Missing uid in client data (cld) claim')
+
+        return {
+            'chipId': chip_id,
+            'uid': uid
+        }
 
     except jwt.ExpiredSignatureError:
         raise Exception('JWT has expired - scan is too old')
@@ -194,11 +216,14 @@ def main():
 
             if vkjwt:
                 try:
-                    chip_id = validate_authentichip_jwt(vkjwt)
+                    result = validate_authentichip_jwt(vkjwt)
+                    chip_id = result['chipId']
+                    uid = result['uid']
 
                     response = f"""SUCCESS - Chip Verified
 ========================
 Chip ID: {chip_id}
+UID: {uid}
 
 This chip has been cryptographically verified.
 You can use this chip ID to:

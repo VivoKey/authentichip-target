@@ -63,10 +63,10 @@ function getAuthentiChipJWKS() {
 }
 
 /**
- * Validate an AuthentiChip JWT and extract the chip ID
+ * Validate an AuthentiChip JWT and extract the chip ID and UID
  *
  * @param string $jwt The JWT token
- * @return string The verified chip ID (from the 'sub' claim)
+ * @return array Associative array with 'chipId' (SHA-256 hash) and 'uid' (7-byte chip UID)
  * @throws Exception If validation fails for any reason
  */
 function validateAuthentiChipJWT($jwt) {
@@ -100,12 +100,32 @@ function validateAuthentiChipJWT($jwt) {
 
         $chipId = $decoded->sub;
 
-        // Optional: Validate the chip ID format (should be UUID)
-        if (!preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $chipId)) {
-            throw new Exception('Invalid chip ID format');
+        // Validate the chip ID format (should be SHA-256 hash - 64 hex characters)
+        if (!preg_match('/^[0-9a-f]{64}$/i', $chipId)) {
+            throw new Exception('Invalid chip ID format - expected SHA-256 hash');
         }
 
-        return $chipId;
+        // Validate product claim (must be 6 for AuthentiChip)
+        if (!isset($decoded->prd) || $decoded->prd !== 6) {
+            throw new Exception('Invalid product claim - expected prd=6 for AuthentiChip');
+        }
+
+        // Validate audience claim exists
+        if (!isset($decoded->aud) || empty($decoded->aud)) {
+            throw new Exception('Missing audience (aud) claim in JWT');
+        }
+
+        // Extract UID from client data claim
+        if (!isset($decoded->cld) || !isset($decoded->cld->uid) || empty($decoded->cld->uid)) {
+            throw new Exception('Missing uid in client data (cld) claim');
+        }
+
+        $uid = $decoded->cld->uid;
+
+        return [
+            'chipId' => $chipId,
+            'uid' => $uid
+        ];
 
     } catch (ExpiredException $e) {
         throw new Exception('JWT has expired - scan is too old');
@@ -132,11 +152,14 @@ if (basename(__FILE__) == basename($_SERVER['SCRIPT_FILENAME'])) {
     if ($jwt) {
         // JWT present - validate it
         try {
-            $chipId = validateAuthentiChipJWT($jwt);
+            $result = validateAuthentiChipJWT($jwt);
+            $chipId = $result['chipId'];
+            $uid = $result['uid'];
 
             echo "SUCCESS - Chip Verified\n";
             echo "========================\n";
-            echo "Chip ID: $chipId\n\n";
+            echo "Chip ID: $chipId\n";
+            echo "UID: $uid\n\n";
             echo "This chip has been cryptographically verified.\n";
             echo "You can use this chip ID to:\n";
             echo "- Look up product information\n";

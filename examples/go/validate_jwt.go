@@ -44,11 +44,20 @@ var (
 	// ErrInvalidChipID indicates chip ID format is invalid
 	ErrInvalidChipID = errors.New("invalid chip ID format")
 
+	// ErrMissingAudience indicates no audience claim in JWT
+	ErrMissingAudience = errors.New("missing audience (aud) in JWT")
+
+	// ErrInvalidProduct indicates product type is not 6
+	ErrInvalidProduct = errors.New("invalid product type - expected 6 (AuthentiChip)")
+
+	// ErrMissingUID indicates no UID in client data
+	ErrMissingUID = errors.New("missing UID in client data (cld)")
+
 	// jwks is the global JWKS client (initialized on first use)
 	jwks *keyfunc.JWKS
 
-	// uuidRegex validates chip ID format
-	uuidRegex = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+	// sha256Regex validates chip ID format (SHA-256 hash)
+	sha256Regex = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
 
 // getJWKS returns the JWKS client, initializing it if necessary
@@ -74,16 +83,22 @@ func getJWKS() (*keyfunc.JWKS, error) {
 	return jwks, nil
 }
 
-// ValidateJWT validates an AuthentiChip JWT and returns the chip ID
-func ValidateJWT(tokenString string) (string, error) {
+// ValidationResult contains the validated chip information
+type ValidationResult struct {
+	ChipID string // SHA-256 hash from sub claim
+	UID    string // Chip UID from cld.uid
+}
+
+// ValidateJWT validates an AuthentiChip JWT and returns the chip ID and UID
+func ValidateJWT(tokenString string) (*ValidationResult, error) {
 	if tokenString == "" {
-		return "", ErrNoToken
+		return nil, ErrNoToken
 	}
 
 	// Get JWKS
 	jwks, err := getJWKS()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	// Parse and validate JWT
@@ -91,42 +106,68 @@ func ValidateJWT(tokenString string) (string, error) {
 	if err != nil {
 		// Map specific error types
 		if errors.Is(err, jwt.ErrTokenExpired) {
-			return "", ErrExpired
+			return nil, ErrExpired
 		}
 		if errors.Is(err, jwt.ErrTokenSignatureInvalid) {
-			return "", ErrInvalidSignature
+			return nil, ErrInvalidSignature
 		}
-		return "", fmt.Errorf("JWT validation failed: %w", err)
+		return nil, fmt.Errorf("JWT validation failed: %w", err)
 	}
 
 	if !token.Valid {
-		return "", ErrInvalidFormat
+		return nil, ErrInvalidFormat
 	}
 
 	// Extract claims
 	claims, ok := token.Claims.(jwt.MapClaims)
 	if !ok {
-		return "", ErrInvalidFormat
+		return nil, ErrInvalidFormat
 	}
 
 	// Verify issuer
 	issuer, ok := claims["iss"].(string)
 	if !ok || issuer != Issuer {
-		return "", ErrInvalidIssuer
+		return nil, ErrInvalidIssuer
+	}
+
+	// Verify audience exists
+	_, ok = claims["aud"].(string)
+	if !ok {
+		return nil, ErrMissingAudience
+	}
+
+	// Verify product type is 6
+	prd, ok := claims["prd"].(float64)
+	if !ok || int(prd) != 6 {
+		return nil, ErrInvalidProduct
 	}
 
 	// Extract chip ID from subject
 	chipID, ok := claims["sub"].(string)
 	if !ok || chipID == "" {
-		return "", ErrMissingChipID
+		return nil, ErrMissingChipID
 	}
 
-	// Validate chip ID format (UUID)
-	if !uuidRegex.MatchString(chipID) {
-		return "", ErrInvalidChipID
+	// Validate chip ID format (SHA-256 hash)
+	if !sha256Regex.MatchString(chipID) {
+		return nil, ErrInvalidChipID
 	}
 
-	return chipID, nil
+	// Extract UID from client data
+	cld, ok := claims["cld"].(map[string]interface{})
+	if !ok {
+		return nil, ErrMissingUID
+	}
+
+	uid, ok := cld["uid"].(string)
+	if !ok || uid == "" {
+		return nil, ErrMissingUID
+	}
+
+	return &ValidationResult{
+		ChipID: chipID,
+		UID:    uid,
+	}, nil
 }
 
 // Example HTTP server for testing

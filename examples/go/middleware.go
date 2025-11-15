@@ -19,7 +19,7 @@ const (
 	// ChipStatusKey is the context key for the chip status
 	ChipStatusKey contextKey = "chip_status"
 
-	// ChipUIDKey is the context key for unverified chip UID
+	// ChipUIDKey is the context key for chip UID (verified or unverified)
 	ChipUIDKey contextKey = "chip_uid"
 )
 
@@ -57,14 +57,15 @@ func Middleware(next http.Handler) http.Handler {
 
 		// Attempt JWT validation
 		if vkjwt != "" {
-			chipID, err := ValidateJWT(vkjwt)
+			result, err := ValidateJWT(vkjwt)
 			if err == nil {
 				// Success
-				ctx = context.WithValue(ctx, ChipIDKey, chipID)
+				ctx = context.WithValue(ctx, ChipIDKey, result.ChipID)
+				ctx = context.WithValue(ctx, ChipUIDKey, result.UID)
 				ctx = context.WithValue(ctx, ChipVerifiedKey, true)
 				ctx = context.WithValue(ctx, ChipStatusKey, StatusVerified)
 
-				log.Printf("[AuthentiChip] Verified: %s from %s", chipID, r.RemoteAddr)
+				log.Printf("[AuthentiChip] Verified: ChipID=%s UID=%s from %s", result.ChipID, result.UID, r.RemoteAddr)
 			} else {
 				// Validation failed - determine status
 				var status ChipStatus
@@ -112,7 +113,7 @@ func MiddlewareRequired(next http.Handler) http.Handler {
 			return
 		}
 
-		chipID, err := ValidateJWT(vkjwt)
+		result, err := ValidateJWT(vkjwt)
 		if err != nil {
 			var errResp ErrorResponse
 			switch err {
@@ -143,11 +144,12 @@ func MiddlewareRequired(next http.Handler) http.Handler {
 
 		// Add chip info to context
 		ctx := r.Context()
-		ctx = context.WithValue(ctx, ChipIDKey, chipID)
+		ctx = context.WithValue(ctx, ChipIDKey, result.ChipID)
+		ctx = context.WithValue(ctx, ChipUIDKey, result.UID)
 		ctx = context.WithValue(ctx, ChipVerifiedKey, true)
 		ctx = context.WithValue(ctx, ChipStatusKey, StatusVerified)
 
-		log.Printf("[AuthentiChip] Verified: %s from %s", chipID, r.RemoteAddr)
+		log.Printf("[AuthentiChip] Verified: ChipID=%s UID=%s from %s", result.ChipID, result.UID, r.RemoteAddr)
 
 		// Continue with authenticated request
 		next.ServeHTTP(w, r.WithContext(ctx))
@@ -182,7 +184,7 @@ func GetChipStatus(r *http.Request) ChipStatus {
 	return status
 }
 
-// GetChipUID retrieves the unverified chip UID from the request context
+// GetChipUID retrieves the chip UID from the request context (verified or unverified)
 func GetChipUID(r *http.Request) (string, bool) {
 	uid, ok := r.Context().Value(ChipUIDKey).(string)
 	return uid, ok

@@ -57,10 +57,11 @@ class AuthentiChipMiddleware(MiddlewareMixin):
     Django middleware for AuthentiChip JWT validation
 
     Adds the following attributes to the request object:
-    - request.chip_id: Verified chip ID (UUID) or None
+    - request.chip_id: Verified chip ID (SHA-256 hash) or None
+    - request.chip_uid: 7-byte chip UID or None
     - request.chip_verified: Boolean indicating if chip was verified
     - request.chip_status: 'verified', 'expired', 'invalid', 'insecure', 'error', or 'none'
-    - request.chip_uid: Raw UID for unverified scans
+    - request.chip_raw_uid: Raw UID for unverified scans
     """
 
     def process_request(self, request):
@@ -72,21 +73,23 @@ class AuthentiChipMiddleware(MiddlewareMixin):
 
         # Initialize request attributes
         request.chip_id = None
+        request.chip_uid = None
         request.chip_verified = False
         request.chip_status = 'none'
-        request.chip_uid = None
+        request.chip_raw_uid = None
 
         # Attempt JWT validation
         if vkjwt:
             try:
-                chip_id = validate_authentichip_jwt(vkjwt)
+                result = validate_authentichip_jwt(vkjwt)
 
-                request.chip_id = chip_id
+                request.chip_id = result['chipId']
+                request.chip_uid = result['uid']
                 request.chip_verified = True
                 request.chip_status = 'verified'
 
                 logger.info(
-                    f'AuthentiChip verified: {chip_id} '
+                    f'AuthentiChip verified: {result["chipId"]} (UID: {result["uid"]}) '
                     f'from {self._get_client_ip(request)}'
                 )
 
@@ -107,7 +110,7 @@ class AuthentiChipMiddleware(MiddlewareMixin):
 
         # Handle unverified scans
         elif vkstatus and vkuid:
-            request.chip_uid = vkuid
+            request.chip_raw_uid = vkuid
             request.chip_status = vkstatus
             request.chip_verified = False
 
@@ -189,15 +192,17 @@ if __name__ == '__main__':
     def example_optional_view(request):
         """Example view with optional authentication"""
         chip_id = getattr(request, 'chip_id', None)
+        chip_uid = getattr(request, 'chip_uid', None)
         chip_verified = getattr(request, 'chip_verified', False)
         chip_status = getattr(request, 'chip_status', 'none')
 
         return JsonResponse({
             'chip_verified': chip_verified,
             'chip_id': chip_id,
+            'chip_uid': chip_uid,
             'chip_status': chip_status,
             'message': (
-                f'Welcome! Verified chip: {chip_id}'
+                f'Welcome! Verified chip: {chip_id} (UID: {chip_uid})'
                 if chip_verified
                 else 'No verified chip detected'
             )
@@ -208,15 +213,17 @@ if __name__ == '__main__':
         """Example view with required authentication"""
         return JsonResponse({
             'message': 'Access granted',
-            'chip_id': request.chip_id
+            'chip_id': request.chip_id,
+            'uid': request.chip_uid
         })
 
     def example_product_view(request, product_id):
         """Example product view"""
         chip_verified = getattr(request, 'chip_verified', False)
         chip_id = getattr(request, 'chip_id', None)
-        chip_status = getattr(request, 'chip_status', 'none')
         chip_uid = getattr(request, 'chip_uid', None)
+        chip_status = getattr(request, 'chip_status', 'none')
+        chip_raw_uid = getattr(request, 'chip_raw_uid', None)
 
         product_data = {
             'id': product_id,
@@ -226,10 +233,11 @@ if __name__ == '__main__':
 
         if chip_verified:
             product_data['chip_id'] = chip_id
+            product_data['uid'] = chip_uid
             product_data['message'] = 'This is a verified authentic product'
         elif chip_status in ('insecure', 'expired'):
             product_data['message'] = 'Verification was unavailable'
-            product_data['uid'] = chip_uid
+            product_data['uid'] = chip_raw_uid
             product_data['status'] = chip_status
         else:
             product_data['message'] = 'No chip scan detected'
@@ -251,10 +259,16 @@ Use in views:
 
     def product_view(request, product_id):
         if request.chip_verified:
-            return JsonResponse({'chip_id': request.chip_id})
+            return JsonResponse({
+                'chip_id': request.chip_id,
+                'uid': request.chip_uid
+            })
         return JsonResponse({'verified': False})
 
     @require_authentichip
     def protected_view(request):
-        return JsonResponse({'chip_id': request.chip_id})
+        return JsonResponse({
+            'chip_id': request.chip_id,
+            'uid': request.chip_uid
+        })
 """)
