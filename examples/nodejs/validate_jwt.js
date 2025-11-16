@@ -40,7 +40,7 @@ function getKey(header, callback) {
  * Validate an AuthentiChip JWT and extract the chip ID
  *
  * @param {string} token - The JWT token from vkjwt parameter
- * @returns {Promise<Object>} - Object with chipId (SHA-256 hash), uid (7-byte chip UID), and serial (optional)
+ * @returns {Promise<Object>} - Object with chipId (SHA-256 hash), uid (7-byte chip UID), and serial (optional item identifier)
  * @throws {Error} - If validation fails
  */
 async function validateAuthentiChipJWT(token) {

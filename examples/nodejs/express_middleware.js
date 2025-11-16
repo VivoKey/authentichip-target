@@ -27,7 +27,7 @@ const { validateAuthentiChipJWT } = require('./validate_jwt');
  * - req.chipVerified: Boolean indicating if chip was verified
  * - req.chipStatus: 'verified', 'expired', 'invalid', 'insecure', 'error', or 'none'
  * - req.chipUid: 7-byte chip UID (available for both verified and unverified scans)
- * - req.chipSerial: Item serial number (available if chip was verified and has serial)
+ * - req.chipSerial: Item serial identifier (alphanumeric, available if chip was verified and has serial)
  *
  * @param {Object} options - Configuration options
  * @param {boolean} options.required - If true, reject requests without valid JWT (default: false)
