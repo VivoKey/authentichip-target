@@ -40,7 +40,7 @@ function getKey(header, callback) {
  * Validate an AuthentiChip JWT and extract the chip ID
  *
  * @param {string} token - The JWT token from vkjwt parameter
- * @returns {Promise<Object>} - Object with chipId (SHA-256 hash) and uid (7-byte chip UID)
+ * @returns {Promise<Object>} - Object with chipId (SHA-256 hash), uid (7-byte chip UID), and serial (optional)
  * @throws {Error} - If validation fails
  */
 async function validateAuthentiChipJWT(token) {
@@ -92,12 +92,14 @@ async function validateAuthentiChipJWT(token) {
                     return reject(new Error('Missing audience (aud) claim in JWT'));
                 }
 
-                // Extract UID from client data claim
+                // Extract UID and optional serial from client data claim
                 let uid = null;
+                let serial = null;
                 if (decoded.cld) {
                     try {
                         const cldData = JSON.parse(decoded.cld);
                         uid = cldData.uid;
+                        serial = cldData.serial || null;
                     } catch (e) {
                         return reject(new Error('Invalid client data (cld) claim - not valid JSON'));
                     }
@@ -106,7 +108,7 @@ async function validateAuthentiChipJWT(token) {
                     return reject(new Error('Missing uid in client data (cld) claim'));
                 }
 
-                resolve({ chipId, uid });
+                resolve({ chipId, uid, serial });
             }
         );
     });
@@ -129,13 +131,13 @@ if (require.main === module) {
 
         if (vkjwt) {
             try {
-                const { chipId, uid } = await validateAuthentiChipJWT(vkjwt);
+                const { chipId, uid, serial } = await validateAuthentiChipJWT(vkjwt);
 
                 res.statusCode = 200;
                 res.end(`SUCCESS - Chip Verified
 ========================
 Chip ID: ${chipId}
-UID: ${uid}
+UID: ${uid}${serial ? `\nSerial: ${serial}` : ''}
 
 This chip has been cryptographically verified.
 You can use this chip ID to:

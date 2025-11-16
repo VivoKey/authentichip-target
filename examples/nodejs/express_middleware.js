@@ -27,10 +27,11 @@ const { validateAuthentiChipJWT } = require('./validate_jwt');
  * - req.chipVerified: Boolean indicating if chip was verified
  * - req.chipStatus: 'verified', 'expired', 'invalid', 'insecure', 'error', or 'none'
  * - req.chipUid: 7-byte chip UID (available for both verified and unverified scans)
+ * - req.chipSerial: Item serial number (available if chip was verified and has serial)
  *
  * @param {Object} options - Configuration options
  * @param {boolean} options.required - If true, reject requests without valid JWT (default: false)
- * @param {Function} options.onVerified - Callback(req, chipId, uid) called when chip is verified
+ * @param {Function} options.onVerified - Callback(req, chipId, uid, serial) called when chip is verified
  * @param {Function} options.onUnverified - Callback(req, uid, status) called for unverified scans
  * @returns {Function} Express middleware function
  */
@@ -51,14 +52,16 @@ function authentiChipMiddleware(options = {}) {
         req.chipVerified = false;
         req.chipStatus = 'none';
         req.chipUid = null;
+        req.chipSerial = null;
 
         // Attempt JWT validation if present
         if (vkjwt) {
             try {
-                const { chipId, uid } = await validateAuthentiChipJWT(vkjwt);
+                const { chipId, uid, serial } = await validateAuthentiChipJWT(vkjwt);
 
                 req.chipId = chipId;
                 req.chipUid = uid;
+                req.chipSerial = serial;
                 req.chipVerified = true;
                 req.chipStatus = 'verified';
 
@@ -66,6 +69,7 @@ function authentiChipMiddleware(options = {}) {
                 console.log('[AuthentiChip] Verified:', {
                     chipId,
                     uid,
+                    serial,
                     ip: req.ip,
                     userAgent: req.get('user-agent'),
                     timestamp: new Date().toISOString(),
@@ -73,7 +77,7 @@ function authentiChipMiddleware(options = {}) {
 
                 // Call onVerified callback if provided
                 if (onVerified) {
-                    onVerified(req, chipId, uid);
+                    onVerified(req, chipId, uid, serial);
                 }
 
                 return next();
@@ -162,8 +166,8 @@ if (require.main === module) {
 
     // Apply middleware to all routes
     app.use(authentiChipMiddleware({
-        onVerified: (req, chipId, uid) => {
-            console.log('Custom handler - verified:', { chipId, uid });
+        onVerified: (req, chipId, uid, serial) => {
+            console.log('Custom handler - verified:', { chipId, uid, serial });
         },
         onUnverified: (req, uid, status) => {
             console.log('Custom handler - unverified:', { uid, status });
@@ -175,9 +179,10 @@ if (require.main === module) {
         res.json({
             chipVerified: req.chipVerified,
             chipId: req.chipId,
+            chipSerial: req.chipSerial,
             chipStatus: req.chipStatus,
             message: req.chipVerified
-                ? `Welcome! Verified chip: ${req.chipId}`
+                ? `Welcome! Verified chip: ${req.chipId}${req.chipSerial ? ` (Serial: ${req.chipSerial})` : ''}`
                 : 'No verified chip detected',
         });
     });
@@ -189,6 +194,7 @@ if (require.main === module) {
             res.json({
                 message: 'Access granted',
                 chipId: req.chipId,
+                chipSerial: req.chipSerial,
             });
         }
     );
@@ -203,7 +209,10 @@ if (require.main === module) {
 
         if (req.chipVerified) {
             product.chipId = req.chipId;
-            product.message = 'This is a verified authentic product';
+            product.serial = req.chipSerial;
+            product.message = req.chipSerial
+                ? `This is a verified authentic product (Serial: ${req.chipSerial})`
+                : 'This is a verified authentic product';
         } else if (req.chipStatus === 'insecure' || req.chipStatus === 'expired') {
             product.message = 'Verification was unavailable - authenticity cannot be confirmed';
             product.uid = req.chipUid;

@@ -88,12 +88,14 @@ async function validateAuthentiChipJWT(token) {
                     return reject(new Error('Missing audience (aud) claim in JWT'));
                 }
 
-                // Extract UID from client data claim
+                // Extract UID and optional serial from client data claim
                 let uid = null;
+                let serial = null;
                 if (decoded.cld) {
                     try {
                         const cldData = JSON.parse(decoded.cld);
                         uid = cldData.uid;
+                        serial = cldData.serial || null;
                     } catch (e) {
                         return reject(new Error('Invalid client data (cld) claim - not valid JSON'));
                     }
@@ -102,7 +104,7 @@ async function validateAuthentiChipJWT(token) {
                     return reject(new Error('Missing uid in client data (cld) claim'));
                 }
 
-                resolve({ chipId, uid });
+                resolve({ chipId, uid, serial });
             }
         );
     });
@@ -125,12 +127,13 @@ export default async function handler(req, res) {
     // Handle JWT verification
     if (vkjwt) {
         try {
-            const { chipId, uid } = await validateAuthentiChipJWT(vkjwt);
+            const { chipId, uid, serial } = await validateAuthentiChipJWT(vkjwt);
 
             return res.status(200).json({
                 verified: true,
                 chipId,
                 uid,
+                serial,
                 timestamp: new Date().toISOString(),
             });
 
@@ -181,8 +184,8 @@ export default async function handler(req, res) {
  *
  *     if (vkjwt) {
  *         try {
- *             const { chipId, uid } = await validateAuthentiChipJWT(vkjwt);
- *             chipData = { verified: true, chipId, uid };
+ *             const { chipId, uid, serial } = await validateAuthentiChipJWT(vkjwt);
+ *             chipData = { verified: true, chipId, uid, serial };
  *         } catch (error) {
  *             chipData = { verified: false, error: error.message };
  *         }
@@ -207,6 +210,7 @@ export default async function handler(req, res) {
  *                     <p>Verified Authentic</p>
  *                     <p>Chip ID: {chipData.chipId}</p>
  *                     <p>UID: {chipData.uid}</p>
+ *                     {chipData.serial && <p>Serial: {chipData.serial}</p>}
  *                 </div>
  *             ) : (
  *                 <div className="unverified">
@@ -263,6 +267,7 @@ export default async function handler(req, res) {
  *                 <h1>Verified Authentic</h1>
  *                 <p>Chip ID: {chipData.chipId}</p>
  *                 <p>UID: {chipData.uid}</p>
+ *                 {chipData.serial && <p>Serial: {chipData.serial}</p>}
  *             </div>
  *         );
  *     } else {
